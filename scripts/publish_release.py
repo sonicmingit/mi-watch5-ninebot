@@ -6,7 +6,7 @@ repo=Path(__file__).resolve().parents[1]
 tag='v0.0.9-port6'
 base='https://api.github.com/repos/sonicmingit/mi-watch5-ninebot'
 assets=repo/'dist/release'
-names=['九号出行-手表.apk','九号授权助手-手机.apk']
+names=['watch.apk','phone.apk']
 for name in names:assert (assets/name).is_file(),name
 cred=subprocess.run(['git','credential','fill'],input='protocol=https\nhost=github.com\n\n',text=True,capture_output=True,check=True)
 token=next(line.split('=',1)[1] for line in cred.stdout.splitlines() if line.startswith('password='))

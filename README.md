@@ -8,8 +8,8 @@
 
 从 [最新 Release](https://github.com/sonicmingit/mi-watch5-ninebot/releases/latest) 下载两个文件：
 
-1. 手机安装 **`九号授权助手-手机.apk`**。手机还需要从官方渠道安装九号出行并登录。
-2. 手表安装 **`九号出行-手表.apk`**。手表 APK 可通过无线调试使用 ADB 安装：`adb -s 手表IP:调试端口 install -r 九号出行-手表.apk`。
+1. 手机安装 **`phone.apk`**。手机还需要从官方渠道安装九号出行并登录。
+2. 手表安装 **`watch.apk`**。手表 APK 可通过无线调试使用 ADB 安装：`adb -s 手表IP:调试端口 install -r watch.apk`。
 
 ## 使用方法
 
