@@ -1,0 +1,31 @@
+# Local proprietary input and build output
+/inputs/
+/build/
+/dist/
+/download/
+/logs/
+/tmp/
+*.apk
+*.apk.idsig
+*.aab
+*.zip
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.pem
+*.key
+*.log
+*.jsonl
+.env
+.env.*
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+
+# Device-specific diagnostics and account state
+*token*
+*credential*
+*secret*
+*.trace
