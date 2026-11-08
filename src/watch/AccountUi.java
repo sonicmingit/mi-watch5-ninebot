@@ -13,6 +13,9 @@ import android.graphics.drawable.GradientDrawable;
 /** Local UI additions only; no vehicle commands or credential export. */
 public class AccountUi extends ContentProvider implements Application.ActivityLifecycleCallbacks {
     private static final String TAG = "ninebot.logout.entry";
+    private final java.util.Map<Activity,VehicleStatusUi> status=new java.util.WeakHashMap<>();
+    private final java.util.Map<Activity,Runnable> attachments=new java.util.WeakHashMap<>();
+    private final java.util.Set<Activity> resumed=java.util.Collections.newSetFromMap(new java.util.WeakHashMap<Activity,Boolean>());
     public boolean onCreate() {
         ((Application)getContext().getApplicationContext()).registerActivityLifecycleCallbacks(this);
         return true;
@@ -33,6 +36,7 @@ public class AccountUi extends ContentProvider implements Application.ActivityLi
         return b;
     }
     public void onActivityResumed(Activity a) {
+        resumed.add(a);CrownScroll.install(a);
         if(a.getClass().getName().equals("com.ninebot.ninebot.MainActivity") &&
             a.getSharedPreferences("com.ninebot.ninebot",0).getString("token","").isEmpty()) {
             a.startActivity(new Intent().setClassName(a,"local.ninebot.bridge.ProbeActivity"));
@@ -48,29 +52,40 @@ public class AccountUi extends ContentProvider implements Application.ActivityLi
         if(a.getClass().getName().equals("com.ninebot.ninebot.DeviceDetailActivity")) {
             // The original content arrives asynchronously after the vehicle request.
             View root=a.getWindow().getDecorView();
-            root.postDelayed(()->attachDetail(a,0),200);
+            VehicleStatusUi existing=status.get(a);
+            if(existing!=null)existing.resume();
+            else scheduleAttach(a,0,200);
         }
     }
+    private void scheduleAttach(Activity a,int attempt,long delay) {
+        View root=a.getWindow().getDecorView();Runnable old=attachments.remove(a);if(old!=null)root.removeCallbacks(old);
+        Runnable task=()->{attachments.remove(a);attachDetail(a,attempt);};attachments.put(a,task);root.postDelayed(task,delay);
+    }
     private void attachDetail(Activity a,int attempt) {
-        if(a.isDestroyed()||a.isFinishing())return;
+        if(a.isDestroyed()||a.isFinishing()||!resumed.contains(a))return;
         View root=a.getWindow().getDecorView();if(root.findViewWithTag(TAG)!=null)return;
         ViewGroup scroll=findScroll(root);
-        if(scroll==null || scroll.getChildCount()==0) { if(attempt<30)root.postDelayed(()->attachDetail(a,attempt+1),250);return; }
+        if(scroll==null || scroll.getChildCount()==0) { if(attempt<30)scheduleAttach(a,attempt+1,250);return; }
         View content=scroll.getChildAt(0);scroll.removeView(content);
         content.setPadding(content.getPaddingLeft(),content.getPaddingTop(),content.getPaddingRight(),0);
         scroll.setPadding(scroll.getPaddingLeft(),scroll.getPaddingTop(),scroll.getPaddingRight(),dp(a,40));
         LinearLayout column=new LinearLayout(a);column.setOrientation(LinearLayout.VERTICAL);column.setGravity(Gravity.CENTER_HORIZONTAL);
         column.addView(content,new LinearLayout.LayoutParams(-1,-2));
+        VehicleStatusUi card=new VehicleStatusUi(a);status.put(a,card);
+        LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(dp(a,184),-2);cp.setMargins(0,dp(a,12),0,dp(a,8));column.addView(card.view,cp);
         LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(dp(a,160),dp(a,44));lp.setMargins(0,dp(a,8),0,0);column.addView(entry(a),lp);
         scroll.addView(column,new ViewGroup.LayoutParams(-1,-2));
+        card.resume();
     }
     private ViewGroup findScroll(View v) {
         if(v.getClass().getName().endsWith("NestedScrollView"))return (ViewGroup)v;
         if(v instanceof ViewGroup)for(int i=0;i<((ViewGroup)v).getChildCount();i++){ViewGroup r=findScroll(((ViewGroup)v).getChildAt(i));if(r!=null)return r;}
         return null;
     }
-    public void onActivityCreated(Activity a,Bundle b){} public void onActivityStarted(Activity a){} public void onActivityPaused(Activity a){}
-    public void onActivityStopped(Activity a){} public void onActivitySaveInstanceState(Activity a,Bundle b){} public void onActivityDestroyed(Activity a){}
+    public void onActivityCreated(Activity a,Bundle b){} public void onActivityStarted(Activity a){}
+    public void onActivityPaused(Activity a){resumed.remove(a);Runnable task=attachments.remove(a);if(task!=null)a.getWindow().getDecorView().removeCallbacks(task);VehicleStatusUi card=status.get(a);if(card!=null)card.pause();CrownScroll.uninstall(a);}
+    public void onActivityStopped(Activity a){} public void onActivitySaveInstanceState(Activity a,Bundle b){}
+    public void onActivityDestroyed(Activity a){onActivityPaused(a);status.remove(a);}
     public Cursor query(Uri u,String[] p,String s,String[] a,String o){return null;} public String getType(Uri u){return null;}
     public Uri insert(Uri u,ContentValues v){return null;} public int delete(Uri u,String s,String[] a){return 0;}public int update(Uri u,ContentValues v,String s,String[] a){return 0;}
 
