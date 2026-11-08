@@ -31,14 +31,19 @@ public final class ReadOnlyStatusRaw {
         public final String text;
         private Location(String value){text=value;}
     }
+    private static Object nullable(JSONObject data,String key){return data.isNull(key)?null:data.opt(key);}
     public static Location parseLocation(JSONObject data,long now) {
-        return new Location("速度："+StatusFormat.rawSpeed(data.has("curspeed"),data.opt("curspeed"))
-            +"\n电源码："+StatusFormat.rawPower(data.has("power_status"),data.opt("power_status"))
-            +"\n定位上报："+StatusFormat.rawReport(data.has("sd_time"),data.opt("sd_time"),now));
+        return new Location("速度："+StatusFormat.rawSpeed(data.has("curspeed"),nullable(data,"curspeed"))
+            +"\n电源码："+StatusFormat.rawPower(data.has("power_status"),nullable(data,"power_status"))
+            +"\n定位上报："+StatusFormat.rawReport(data.has("sd_time"),nullable(data,"sd_time"),now));
     }
     /** One execution handle. Cancellation is safe before, during and after call registration. */
     public static final class Reader {
         private volatile boolean cancelled;
+        private final StatusQueryLog.Endpoint diagnostic;
+        public Reader(){this(null);}
+        public Reader(StatusQueryLog.Endpoint value){diagnostic=value;}
+        private void setStage(String value){stage=value;if(diagnostic!=null)diagnostic.phase(value);}
         private Object call;
         private String stage="start";
         private final JSONObject summary=new JSONObject();
@@ -51,11 +56,11 @@ public final class ReadOnlyStatusRaw {
             Object body=null;
         try {
             if(Looper.myLooper()==Looper.getMainLooper())throw new IllegalStateException();
-            stage="source";
+            setStage("source");
             checkCancelled();
             int type=((Number)invoke(bean,"getVehicleType")).intValue();String number=(String)invoke(bean,"getWnumber");
             Object stream=source.getClass().getMethod("getLocationAndStatus",int.class,String.class).invoke(source,type,number);
-            stage="retrofit_call";Class<?> retrofitCall=Class.forName("retrofit2.Call");
+            setStage("retrofit_call");Class<?> retrofitCall=Class.forName("retrofit2.Call");
             Object original=findCall(stream,retrofitCall,new IdentityHashMap<>(),0);if(original==null)throw new IllegalStateException();
             Object request=retrofitCall.getMethod("request").invoke(original);
             Class<?> requestType=Class.forName("okhttp3.Request"),urlType=Class.forName("okhttp3.HttpUrl");
@@ -63,22 +68,23 @@ public final class ReadOnlyStatusRaw {
             Object url=requestType.getMethod("url").invoke(request);
             String path=(String)urlType.getMethod("encodedPath").invoke(url);
             if(!"POST".equals(method)||!path.endsWith("/vehicle/vehicle/vehicle-status"))throw new IllegalStateException();
-            stage="original_factory";
+            setStage("original_factory");
             Object strategy=field(source,"mRetrofitStrategy"),retrofit=invoke(strategy,"getRetrofit");
             Object factory=Class.forName("retrofit2.Retrofit").getMethod("callFactory").invoke(retrofit);
             Object created=Class.forName("okhttp3.Call$Factory").getMethod("newCall",requestType).invoke(factory,request);
             synchronized(this){checkCancelled();call=created;}
-            stage="execute";Class<?> callType=Class.forName("okhttp3.Call");
+            setStage("execute");Class<?> callType=Class.forName("okhttp3.Call");
             // Bound the probe to the existing request timeouts plus a whole-call deadline when available.
             try{Object timeout=callType.getMethod("timeout").invoke(call);Class.forName("okio.Timeout").getMethod("timeout",long.class,java.util.concurrent.TimeUnit.class).invoke(timeout,20L,java.util.concurrent.TimeUnit.SECONDS);}catch(Exception ignored){}
             Object response=callType.getMethod("execute").invoke(call);
             Class<?> responseType=Class.forName("okhttp3.Response");
-            int http=((Number)responseType.getMethod("code").invoke(response)).intValue();summary.put("httpCode",http);
+            int http=((Number)responseType.getMethod("code").invoke(response)).intValue();summary.put("httpCode",http);if(diagnostic!=null)diagnostic.http(http);
             body=responseType.getMethod("body").invoke(response);if(body==null)throw new IllegalStateException();
-            stage="json";Class<?> bodyType=Class.forName("okhttp3.ResponseBody");
+            setStage("json");Class<?> bodyType=Class.forName("okhttp3.ResponseBody");
             long length=((Number)bodyType.getMethod("contentLength").invoke(body)).longValue();if(length>131072)throw new IllegalStateException();
             String text=(String)bodyType.getMethod("string").invoke(body);if(text.length()>131072)throw new IllegalStateException();
             JSONObject root=new JSONObject(text);Object code=root.has("code")?root.opt("code"):root.opt("resultCode");
+            if(diagnostic!=null)diagnostic.business(code);
             Object codes=Class.forName("com.ninebot.ninebot.nbnet.NbResponseCode").getField("INSTANCE").get(null);
             summary.put("success",String.valueOf(invoke(codes,"getSUCCESS")).equals(String.valueOf(code)));
             JSONObject data=root.optJSONObject("data");summary.put("dataObject",data!=null);
@@ -86,11 +92,18 @@ public final class ReadOnlyStatusRaw {
                 summary.put(key+"Present",data.has(key));summary.put(key+"Null",data.isNull(key));
                 Object value=data.opt(key);summary.put(key+"Numeric",value instanceof Number);
             }
+            if(diagnostic!=null&&data!=null)diagnostic.rawFields(data);
             checkCancelled();
-            if(http<200||http>=300||!summary.optBoolean("success")||data==null)throw new IllegalStateException();
-            stage="done";summary.put("stage",stage);
-            return parseLocation(data,System.currentTimeMillis());
+            if(http<200||http>=300||!summary.optBoolean("success")||data==null){
+                if(diagnostic!=null)diagnostic.result("api_rejected",null);throw new IllegalStateException();
+            }
+            setStage("done");summary.put("stage",stage);
+            Location result=parseLocation(data,System.currentTimeMillis());
+            if(diagnostic!=null)diagnostic.result("success",null);return result;
 
+            }catch(Exception failure){
+                if(diagnostic!=null)diagnostic.result(cancelled?"cancelled":stage.equals("json")?"parse_failed":"request_failed",failure);
+                throw failure;
             }finally {
                 if(body!=null)try{Class.forName("okhttp3.ResponseBody").getMethod("close").invoke(body);}catch(Exception ignored){}
                 cancel();

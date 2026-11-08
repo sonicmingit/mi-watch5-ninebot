@@ -7,6 +7,20 @@ import java.util.Locale;
 /** Conservative presentation of typed beans whose primitive presence is unavailable. */
 public final class StatusFormat {
     private StatusFormat() {}
+    /** Strict bounded decimal/exponent input; never returns a service-provided string. */
+    public static Double finiteNumber(Object value) {
+        if(!(value instanceof Number)&&!(value instanceof String))return null;
+        if(value instanceof String) {
+            String s=(String)value;
+            if(s.length()==0||s.length()>48)return null;
+            s=s.trim();
+            if(s.isEmpty()||!s.matches("[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]{1,3})?"))return null;
+        }
+        try {
+            double n=value instanceof Number?((Number)value).doubleValue():Double.parseDouble((String)value);
+            return Double.isNaN(n)||Double.isInfinite(n)?null:n;
+        }catch(Exception ignored){return null;}
+    }
     public static String speed(double value) {
         if (Double.isNaN(value) || Double.isInfinite(value) || value < 0) return "未知（无有效速度）";
         if (value == 0) return "未知（0或字段缺失）";
@@ -14,23 +28,26 @@ public final class StatusFormat {
     }
     public static String rawSpeed(boolean present,Object value) {
         if(!present)return "未知（字段缺失）";
-        if(!(value instanceof Number))return "未知（非数值或空值）";
-        double n=((Number)value).doubleValue();
-        if(Double.isNaN(n)||Double.isInfinite(n)||n<0)return "未知（无有效速度）";
+        if(value==null)return "未知（空值）";
+        Double parsed=finiteNumber(value);if(parsed==null)return "未知（格式不符）";
+        double n=parsed;if(n<0)return "未知（负速度）";
         return n==0?"0（接口值）":String.format(Locale.CHINA,"%.1f（接口值）",n);
     }
     public static String rawPower(boolean present,Object value) {
         if(!present)return "未知（字段缺失）";
-        if(!(value instanceof Number))return "未知（非数值或空值）";
-        double n=((Number)value).doubleValue();
+        if(value==null)return "未知（空值）";
+        Double parsed=finiteNumber(value);if(parsed==null)return "未知（格式不符）";
+        double n=parsed;
         if(Double.isNaN(n)||Double.isInfinite(n)||n!=Math.rint(n)||Math.abs(n)>999999)return "未知枚举";
         return String.valueOf((int)n)+"（接口状态码）";
     }
     public static String rawReport(boolean present,Object value,long now) {
-        if(!present||!(value instanceof Number))return "未知";
-        double n=((Number)value).doubleValue();
+        if(!present)return "未知（字段缺失）";
+        if(value==null)return "未知（空值）";
+        Double parsed=finiteNumber(value);if(parsed==null)return "未知（格式不符）";
+        double n=parsed;
         if(Double.isNaN(n)||Double.isInfinite(n)||n!=Math.rint(n)||n<0||n>9999999999999L)return "未知";
-        return report(String.valueOf(((Number)value).longValue()),now);
+        return report(String.valueOf((long)n),now);
     }
     public static String code(String value) {
         if(value==null || value.trim().isEmpty())return "未知";

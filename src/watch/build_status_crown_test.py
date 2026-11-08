@@ -25,7 +25,7 @@ bt=Path(os.environ['ANDROID_BUILD_TOOLS']);android=Path(os.environ['ANDROID_JAR'
 assert base.is_file()
 def run(*args):subprocess.run([str(x) for x in args],check=True)
 for n in ['classes','dex']:(work/n).mkdir(exist_ok=True)
-sources=[src/n for n in ('AccountUi.java','StatusFormat.java','CrownScroll.java','VehicleStatusUi.java','ReadOnlyStatusRaw.java')]+[root/'src/bridge'/n for n in ('DirectLink.java','ProbeActivity.java','ProbeService.java')]
+sources=[src/n for n in ('AccountUi.java','StatusFormat.java','CrownScroll.java','VehicleStatusUi.java','ReadOnlyStatusRaw.java','StatusQueryLog.java')]+[root/'src/bridge'/n for n in ('DirectLink.java','ProbeActivity.java','ProbeService.java')]
 run(j/'javac.exe','-encoding','UTF-8','-source','8','-target','8','-cp',android,'-d',work/'classes',*sources)
 run(j/'jar.exe','cf',work/'classes.jar','-C',work/'classes','.')
 run(j/'java.exe','-cp',bt/'lib/d8.jar','com.android.tools.r8.D8','--lib',android,'--min-api','26','--output',work/'dex',work/'classes.jar')
@@ -34,13 +34,13 @@ def version(b):
     while p<len(b):
         typ,hs,n=struct.unpack_from('<HHI',b,p)
         if typ==1:
-            pool=Pool(b[p:p+n]);pool.strings=['0.0.9-test90011-status-crown' if x=='0.0.9-port5' else x for x in pool.strings]
+            pool=Pool(b[p:p+n]);pool.strings=['0.0.9-test90013-status-crown' if x=='0.0.9-port5' else x for x in pool.strings]
             c=pool.encode();b[p:p+n]=c;n=len(c);struct.pack_into('<I',b,4,len(b))
         if typ==0x102:
             ast,asz,an=struct.unpack_from('<HHH',b,p+24)
             for i in range(an):
                 a=p+16+ast+i*asz
-                if b[a+15]==16 and struct.unpack_from('<I',b,a+16)[0]==90004:struct.pack_into('<I',b,a+16,90011)
+                if b[a+15]==16 and struct.unpack_from('<I',b,a+16)[0]==90004:struct.pack_into('<I',b,a+16,90013)
         p+=n
     return b
 def patch_dex(raw):
@@ -63,7 +63,7 @@ with zipfile.ZipFile(base) as z,zipfile.ZipFile(out/'port6-unified-unsigned.apk'
 run(bt/'zipalign.exe','-f','-p','4',out/'port6-unified-unsigned.apk',out/'port6-unified-aligned.apk')
 apk=out/'port6-unified-aligned.apk'
 run(bt/'zipalign.exe','-c','-p','4',apk)
-record={'version':'0.0.9-test90011-status-crown','versionCode':90011,'unsignedAlignedApk':str(apk),'sha256':hashlib.sha256(apk.read_bytes()).hexdigest(),'signed':False,'releaseUntouched':True}
+record={'version':'0.0.9-test90013-status-crown','versionCode':90013,'unsignedAlignedApk':str(apk),'sha256':hashlib.sha256(apk.read_bytes()).hexdigest(),'signed':False,'releaseUntouched':True}
 log=logs/(stamp+'-status-crown-build.json')
 with log.open('x',encoding='utf8') as f:json.dump(record,f,indent=2)
 print(json.dumps(record))
