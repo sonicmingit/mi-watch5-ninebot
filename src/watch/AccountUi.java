@@ -70,6 +70,8 @@ public class AccountUi extends ContentProvider implements Application.ActivityLi
         content.setPadding(content.getPaddingLeft(),content.getPaddingTop(),content.getPaddingRight(),0);
         scroll.setPadding(scroll.getPaddingLeft(),scroll.getPaddingTop(),scroll.getPaddingRight(),dp(a,40));
         LinearLayout column=new LinearLayout(a);column.setOrientation(LinearLayout.VERTICAL);column.setGravity(Gravity.CENTER_HORIZONTAL);
+        Button speed=button(a,"速度测试");speed.setTag("ninebot.speed.entry");speed.setTextColor(0xff83ddff);speed.setOnClickListener(v->VehicleSpeedActivity.open(a));
+        LinearLayout.LayoutParams speedLp=new LinearLayout.LayoutParams(dp(a,164),dp(a,44));speedLp.setMargins(0,dp(a,8),0,dp(a,10));column.addView(speed,speedLp);
         column.addView(content,new LinearLayout.LayoutParams(-1,-2));
         VehicleStatusUi card=new VehicleStatusUi(a);status.put(a,card);
         LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(dp(a,184),-2);cp.setMargins(0,dp(a,12),0,dp(a,8));column.addView(card.view,cp);

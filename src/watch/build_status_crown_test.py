@@ -25,7 +25,7 @@ bt=Path(os.environ['ANDROID_BUILD_TOOLS']);android=Path(os.environ['ANDROID_JAR'
 assert base.is_file()
 def run(*args):subprocess.run([str(x) for x in args],check=True)
 for n in ['classes','dex']:(work/n).mkdir(exist_ok=True)
-sources=[src/n for n in ('AccountUi.java','StatusFormat.java','CrownScroll.java','VehicleStatusUi.java','ReadOnlyStatusRaw.java','StatusQueryLog.java')]+[root/'src/bridge'/n for n in ('DirectLink.java','ProbeActivity.java','ProbeService.java')]
+sources=[src/n for n in ('AccountUi.java','StatusFormat.java','CrownScroll.java','VehicleStatusUi.java','ReadOnlyStatusRaw.java','StatusQueryLog.java','VehicleSpeedActivity.java')]+[root/'src/bridge'/n for n in ('DirectLink.java','ProbeActivity.java','ProbeService.java')]
 run(j/'javac.exe','-encoding','UTF-8','-source','8','-target','8','-cp',android,'-d',work/'classes',*sources)
 run(j/'jar.exe','cf',work/'classes.jar','-C',work/'classes','.')
 run(j/'java.exe','-cp',bt/'lib/d8.jar','com.android.tools.r8.D8','--lib',android,'--min-api','26','--output',work/'dex',work/'classes.jar')
@@ -34,15 +34,30 @@ def version(b):
     while p<len(b):
         typ,hs,n=struct.unpack_from('<HHI',b,p)
         if typ==1:
-            pool=Pool(b[p:p+n]);pool.strings=['0.0.9-test90013-status-crown' if x=='0.0.9-port5' else x for x in pool.strings]
+            pool=Pool(b[p:p+n]);pool.strings=['0.0.9-test90015-status-crown' if x=='0.0.9-port5' else x for x in pool.strings]
             c=pool.encode();b[p:p+n]=c;n=len(c);struct.pack_into('<I',b,4,len(b))
         if typ==0x102:
             ast,asz,an=struct.unpack_from('<HHH',b,p+24)
             for i in range(an):
                 a=p+16+ast+i*asz
-                if b[a+15]==16 and struct.unpack_from('<I',b,a+16)[0]==90004:struct.pack_into('<I',b,a+16,90013)
+                if b[a+15]==16 and struct.unpack_from('<I',b,a+16)[0]==90004:struct.pack_into('<I',b,a+16,90015)
         p+=n
     return b
+def add_speed_activity(data):
+    chunks=[];p=8
+    while p<len(data):
+        n=struct.unpack_from('<I',data,p+4)[0];chunks.append(bytearray(data[p:p+n]));p+=n
+    pi=next(i for i,c in enumerate(chunks) if struct.unpack_from('<H',c)[0]==1)
+    pool=Pool(chunks[pi]);ns=pool.index('http://schemas.android.com/apk/res/android')
+    classname=pool.index('local.ninebot.account.VehicleSpeedActivity')
+    attrs=struct.pack('<IIIHBBI',ns,pool.index('name'),classname,8,0,3,classname)
+    attrs+=struct.pack('<IIIHBBI',ns,pool.index('exported'),0xffffffff,8,0,18,0)
+    node=struct.pack('<HHIII',0x102,16,76,0,0xffffffff)+struct.pack('<II6H',0xffffffff,pool.index('activity'),20,20,2,0,0,0)+attrs
+    node+=struct.pack('<HHIIIII',0x103,16,24,0,0xffffffff,0xffffffff,pool.index('activity'))
+    end=next(i for i,c in enumerate(chunks) if struct.unpack_from('<H',c)[0]==0x103 and pool.strings[struct.unpack_from('<I',c,20)[0]]=='application')
+    chunks.insert(end,node);chunks[pi]=pool.encode()
+    b=bytearray(data[:8])+b''.join(chunks);struct.pack_into('<I',b,4,len(b));return b
+
 def patch_dex(raw):
     b=bytearray(raw);inner=0xc834;size=struct.unpack_from('<I',b,inner+0x20)[0]
     old=b'com.heytap.wearable.oms.service';new=b'com.ninebot.ninebot';p=b.find(old,inner,inner+size)
@@ -56,14 +71,14 @@ with zipfile.ZipFile(base) as z,zipfile.ZipFile(out/'port6-unified-unsigned.apk'
     for info in z.infolist():
         if info.filename.startswith('META-INF/'):continue
         b=z.read(info.filename)
-        if info.filename=='AndroidManifest.xml':b=add_unified(version(b))
+        if info.filename=='AndroidManifest.xml':b=add_speed_activity(add_unified(version(b)))
         if info.filename=='classes.dex':b=patch_dex(b)
         if info.filename=='classes2.dex':b=(work/'dex/classes.dex').read_bytes()
         dst.writestr(info,b)
 run(bt/'zipalign.exe','-f','-p','4',out/'port6-unified-unsigned.apk',out/'port6-unified-aligned.apk')
 apk=out/'port6-unified-aligned.apk'
 run(bt/'zipalign.exe','-c','-p','4',apk)
-record={'version':'0.0.9-test90013-status-crown','versionCode':90013,'unsignedAlignedApk':str(apk),'sha256':hashlib.sha256(apk.read_bytes()).hexdigest(),'signed':False,'releaseUntouched':True}
+record={'version':'0.0.9-test90015-status-crown','versionCode':90015,'unsignedAlignedApk':str(apk),'sha256':hashlib.sha256(apk.read_bytes()).hexdigest(),'signed':False,'releaseUntouched':True}
 log=logs/(stamp+'-status-crown-build.json')
 with log.open('x',encoding='utf8') as f:json.dump(record,f,indent=2)
 print(json.dumps(record))

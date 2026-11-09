@@ -22,6 +22,8 @@ public final class StatusQueryLog {
     public final Endpoint engine=new Endpoint("power_status","typed");
     private boolean finished;
     public StatusQueryLog(boolean manual){trigger=manual?"manual":"resume";}
+    private StatusQueryLog(){trigger="speed_auto";engine.result("not_requested",null);}
+    public static StatusQueryLog speed(){return new StatusQueryLog();}
     private static void put(JSONObject o,String k,Object v){try{o.put(k,v);}catch(JSONException ignored){}}
     private static String choice(String value,String... allowed){for(String s:allowed)if(s.equals(value))return s;return "other";}
     public static String exceptionKind(Throwable t) {
@@ -82,7 +84,7 @@ public final class StatusQueryLog {
         }
         public synchronized void result(String value,Throwable failure) {
             if(sealed||!outcome.equals("pending"))return;
-            outcome=choice(value,"success","request_failed","parse_failed","api_rejected","empty","cancelled","timeout","setup_failed");
+            outcome=choice(value,"success","request_failed","parse_failed","api_rejected","empty","cancelled","timeout","setup_failed","not_requested");
             if(failure!=null)error=exceptionKind(failure);took=SystemClock.elapsedRealtime()-began;
         }
         private synchronized JSONObject snapshot(String overall) {
@@ -95,7 +97,7 @@ public final class StatusQueryLog {
     public synchronized void finish(Context context,String outcome,Saved saved) {
         if(finished)return;finished=true;
         String finalState=choice(outcome,"complete","cancelled","timeout","setup_failed");
-        JSONObject o=new JSONObject();put(o,"queryId",id);put(o,"appVersion","0.0.9-test90013-status-crown");put(o,"trigger",trigger);
+        JSONObject o=new JSONObject();put(o,"queryId",id);put(o,"appVersion","0.0.9-test90015-status-crown");put(o,"trigger",trigger);
         put(o,"startedAtMillis",started);put(o,"endedAtMillis",System.currentTimeMillis());put(o,"elapsedMs",SystemClock.elapsedRealtime()-elapsed);put(o,"outcome",finalState);
         put(o,"location",location.snapshot(finalState));put(o,"engine",engine.snapshot(finalState));
         final String json=o.toString();final Context app=context.getApplicationContext();

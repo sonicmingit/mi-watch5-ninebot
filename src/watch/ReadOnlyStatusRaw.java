@@ -29,13 +29,15 @@ public final class ReadOnlyStatusRaw {
     /** Holds only formatted status fields, never the full JSON body. */
     public static final class Location {
         public final String text;
-        private Location(String value){text=value;}
+        public final Double speed;
+        public final String speedText;
+        private Location(String value,Double number){text=value;speed=number;speedText=StatusFormat.speedValueText(number);}
     }
     private static Object nullable(JSONObject data,String key){return data.isNull(key)?null:data.opt(key);}
     public static Location parseLocation(JSONObject data,long now) {
         return new Location("速度："+StatusFormat.rawSpeed(data.has("curspeed"),nullable(data,"curspeed"))
             +"\n电源码："+StatusFormat.rawPower(data.has("power_status"),nullable(data,"power_status"))
-            +"\n定位上报："+StatusFormat.rawReport(data.has("sd_time"),nullable(data,"sd_time"),now));
+            +"\n定位上报："+StatusFormat.rawReport(data.has("sd_time"),nullable(data,"sd_time"),now),StatusFormat.speedValue(data.has("curspeed"),nullable(data,"curspeed")));
     }
     /** One execution handle. Cancellation is safe before, during and after call registration. */
     public static final class Reader {

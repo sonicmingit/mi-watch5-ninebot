@@ -33,6 +33,14 @@ public final class StatusFormat {
         double n=parsed;if(n<0)return "未知（负速度）";
         return n==0?"0（接口值）":String.format(Locale.CHINA,"%.1f（接口值）",n);
     }
+    public static Double speedValue(boolean present,Object value) {
+        Double n=present?finiteNumber(value):null;return n!=null&&n>=0?n:null;
+    }
+    public static String speedValueText(Double value) {
+        if(value==null)return "--";
+        String text=Double.toString(value);if(text.endsWith(".0"))text=text.substring(0,text.length()-2);
+        return text.length()>8?String.format(Locale.CHINA,"%.4g",value):text;
+    }
     public static String rawPower(boolean present,Object value) {
         if(!present)return "未知（字段缺失）";
         if(value==null)return "未知（空值）";
