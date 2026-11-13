@@ -13,6 +13,8 @@ import java.util.concurrent.Executors;
 
 /** Whitelist-only query diagnostics. No arbitrary keys, messages or response objects reach disk. */
 public final class StatusQueryLog {
+    /** Build script sets this false in the public flavor. */
+    public static final boolean LOGGING_ENABLED = true;
     public interface Saved { void complete(String result); }
     private static final java.util.concurrent.Executor WRITER=Executors.newSingleThreadExecutor();
     private final String id=UUID.randomUUID().toString();
@@ -23,6 +25,8 @@ public final class StatusQueryLog {
     private boolean finished;
     public StatusQueryLog(boolean manual){trigger=manual?"manual":"resume";}
     private StatusQueryLog(){trigger="speed_auto";engine.result("not_requested",null);}
+    private StatusQueryLog(String value){trigger=value;}
+    public static StatusQueryLog home(){return new StatusQueryLog("home_auto");}
     public static StatusQueryLog speed(){return new StatusQueryLog();}
     private static void put(JSONObject o,String k,Object v){try{o.put(k,v);}catch(JSONException ignored){}}
     private static String choice(String value,String... allowed){for(String s:allowed)if(s.equals(value))return s;return "other";}
@@ -96,8 +100,9 @@ public final class StatusQueryLog {
     }
     public synchronized void finish(Context context,String outcome,Saved saved) {
         if(finished)return;finished=true;
+        if(!LOGGING_ENABLED){if(saved!=null)saved.complete("日志：测试日志已禁用");return;}
         String finalState=choice(outcome,"complete","cancelled","timeout","setup_failed");
-        JSONObject o=new JSONObject();put(o,"queryId",id);put(o,"appVersion","0.0.9-test90015-status-crown");put(o,"trigger",trigger);
+        JSONObject o=new JSONObject();put(o,"queryId",id);put(o,"appVersion","0.0.9-test90019-test-menu");put(o,"trigger",trigger);
         put(o,"startedAtMillis",started);put(o,"endedAtMillis",System.currentTimeMillis());put(o,"elapsedMs",SystemClock.elapsedRealtime()-elapsed);put(o,"outcome",finalState);
         put(o,"location",location.snapshot(finalState));put(o,"engine",engine.snapshot(finalState));
         final String json=o.toString();final Context app=context.getApplicationContext();

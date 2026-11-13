@@ -30,14 +30,15 @@ public final class ReadOnlyStatusRaw {
     public static final class Location {
         public final String text;
         public final Double speed;
+        public final Integer power;
         public final String speedText;
-        private Location(String value,Double number){text=value;speed=number;speedText=StatusFormat.speedValueText(number);}
+        private Location(String value,Double number,Integer code){text=value;speed=number;power=code;speedText=StatusFormat.speedValueText(number);}
     }
     private static Object nullable(JSONObject data,String key){return data.isNull(key)?null:data.opt(key);}
     public static Location parseLocation(JSONObject data,long now) {
         return new Location("速度："+StatusFormat.rawSpeed(data.has("curspeed"),nullable(data,"curspeed"))
             +"\n电源码："+StatusFormat.rawPower(data.has("power_status"),nullable(data,"power_status"))
-            +"\n定位上报："+StatusFormat.rawReport(data.has("sd_time"),nullable(data,"sd_time"),now),StatusFormat.speedValue(data.has("curspeed"),nullable(data,"curspeed")));
+            +"\n定位上报："+StatusFormat.rawReport(data.has("sd_time"),nullable(data,"sd_time"),now),StatusFormat.speedValue(data.has("curspeed"),nullable(data,"curspeed")),HomeStatus.binary(nullable(data,"power_status")));
     }
     /** One execution handle. Cancellation is safe before, during and after call registration. */
     public static final class Reader {

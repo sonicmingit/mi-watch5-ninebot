@@ -21,6 +21,15 @@ public final class VehicleStatusUi {
     private Thread rawWorker;
     private StatusQueryLog queryLog,latestLog;
     private String logState="日志：每次查询自动保存";
+    private VehicleDashboard dashboard;
+    private ReadOnlyStatusRaw.Location roundLocation;
+    private boolean engineOk;
+    private Integer acc,lock;
+    private HomeStatus.State homeState=HomeStatus.State.UNKNOWN;
+    private Double homeSpeed;
+    private String homeNotice="查询中…";
+    private boolean savedAwake,awakeCaptured;
+    private final Runnable next=()->refresh(false);
     private final TextView body;
     private final Button refresh;
     private boolean active;
@@ -28,7 +37,7 @@ public final class VehicleStatusUi {
     private long queried;
     private String location="速度：未知\n电源码：未知",engine="ACC：未知\n锁状态：未知\n车辆上报：未知";
     private String locState="未查询",engineState="未查询";
-    private final Runnable timeout=()->{if(pending>0){finishLog("timeout");generation++;cancelRequests();pending=0;locState="查询超时 / 旧值";engineState="查询超时 / 旧值";render();}};
+    private final Runnable timeout=()->{if(pending>0){finishLog("timeout");generation++;cancelRequests();pending=0;locState="查询超时 / 旧值";engineState="查询超时 / 旧值";homeNotice="更新失败 · 旧值";render();schedule();}};
     public final LinearLayout view;
     public VehicleStatusUi(Activity a) {
         activity=a;view=new LinearLayout(a);view.setOrientation(1);view.setTag(TAG);view.setPadding(AccountUi.dp(a,12),AccountUi.dp(a,12),AccountUi.dp(a,12),AccountUi.dp(a,12));
@@ -37,8 +46,12 @@ public final class VehicleStatusUi {
         body=new TextView(a);body.setTextSize(12);body.setTextColor(0xffdddddd);body.setPadding(0,AccountUi.dp(a,8),0,AccountUi.dp(a,8));body.setLineSpacing(AccountUi.dp(a,3),1);view.addView(body,new LinearLayout.LayoutParams(-1,-2));
         refresh=AccountUi.button(a,"刷新状态");refresh.setTag(REFRESH_TAG);refresh.setTextSize(14);refresh.setOnClickListener(v->refresh());view.addView(refresh,new LinearLayout.LayoutParams(-1,AccountUi.dp(a,44)));render();
     }
-    public void resume(){active=true;refresh(false);}
-    public void pause(){active=false;finishLog("cancelled");generation++;pending=0;main.removeCallbacksAndMessages(null);cancelRequests();}
+    public void setDashboard(VehicleDashboard value){dashboard=value;render();}
+    public void resume(){if(active)return;active=true;if(!awakeCaptured){savedAwake=(activity.getWindow().getAttributes().flags&android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)!=0;awakeCaptured=true;}refresh(false);}
+    private void schedule(){if(active){main.removeCallbacks(next);main.postDelayed(next,3000);}}
+    private void awake(){if(active&&homeState==HomeStatus.State.DRIVING)activity.getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);else if(awakeCaptured){if(savedAwake)activity.getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);else activity.getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);}}
+
+    public void pause(){active=false;finishLog("cancelled");generation++;pending=0;main.removeCallbacksAndMessages(null);cancelRequests();awake();}
     private static Object call(Object o,String name)throws Exception{return o.getClass().getMethod(name).invoke(o);}
     private static Object field(Object o,String name)throws Exception{Field f=o.getClass().getDeclaredField(name);f.setAccessible(true);return f.get(o);}
     private void cancelRequests(){
@@ -53,26 +66,30 @@ public final class VehicleStatusUi {
     }
     private void refresh(boolean manual) {
         if(!active||pending>0)return;
-        cancelRequests();int id=++generation;pending=2;queried=System.currentTimeMillis();queryLog=new StatusQueryLog(manual);latestLog=queryLog;logState="日志：等待本次查询结束";locState="查询中 / 旧值";engineState="查询中 / 旧值";render();main.postDelayed(timeout,20000);
+        main.removeCallbacks(next);cancelRequests();roundLocation=null;engineOk=false;acc=null;lock=null;int id=++generation;pending=2;queried=System.currentTimeMillis();queryLog=manual?new StatusQueryLog(true):StatusQueryLog.home();latestLog=queryLog;logState="日志：等待本次查询结束";locState="查询中 / 旧值";engineState="查询中 / 旧值";render();main.postDelayed(timeout,20000);
         try {
             Object presenter=field(activity,"mPresenter"),source=field(presenter,"mApiSource"),bean=field(presenter,"mDeviceBean");
-            int type=((Number)call(bean,"getVehicleType")).intValue();String number=(String)call(bean,"getWnumber");
             readLocation(source,bean,id);
-            Object service=call(source,"getService");
-            Class<?> api=Class.forName("com.ninebot.ninebot.device.motor.network.MotorApiService");
-            subscribe(api.getMethod("getEngineStatus",int.class,String.class).invoke(service,type,number),true,id,queryLog.engine);
-        }catch(Exception e){if(active&&id==generation){if(queryLog!=null){queryLog.location.result("setup_failed",e);queryLog.engine.result("setup_failed",e);}finishLog("setup_failed");generation++;pending=0;cancelRequests();main.removeCallbacks(timeout);locState="请求失败 / 旧值";engineState="请求失败 / 旧值";render();}}
+        }catch(Exception e){if(active&&id==generation){if(queryLog!=null){queryLog.location.result("setup_failed",e);queryLog.engine.result("setup_failed",e);}finishLog("setup_failed");generation++;pending=0;cancelRequests();main.removeCallbacks(timeout);locState="请求失败 / 旧值";engineState="请求失败 / 旧值";homeNotice="更新失败 · 旧值";render();schedule();}}
     }
     private void readLocation(Object source,Object bean,int id) {
         ReadOnlyStatusRaw.Reader reader=new ReadOnlyStatusRaw.Reader(queryLog.location);rawReader=reader;
         rawWorker=new Thread(()->{
             try {
                 ReadOnlyStatusRaw.Location result=reader.read(source,bean);
-                main.post(()->{if(!active||id!=generation)return;rawReader=null;rawWorker=null;location=result.text;locState="已查询（原始字段）";done();});
+                main.post(()->{if(!active||id!=generation)return;rawReader=null;rawWorker=null;roundLocation=result;location=result.text;locState="已查询（原始字段）";done();readEngine(source,bean,id);});
             }catch(Exception ignored){
-                main.post(()->{if(!active||id!=generation)return;rawReader=null;rawWorker=null;fail(false,"请求或解析失败 / 旧值");done();});
+                main.post(()->{if(!active||id!=generation)return;rawReader=null;rawWorker=null;fail(false,"请求或解析失败 / 旧值");done();readEngine(source,bean,id);});
             }
         },"ninebot-read-only-status");rawWorker.start();
+    }
+    private void readEngine(Object source,Object bean,int id) {
+        if(!active||id!=generation)return;
+        try {
+            int type=((Number)call(bean,"getVehicleType")).intValue();String number=(String)call(bean,"getWnumber");
+            Object service=call(source,"getService");Class<?> api=Class.forName("com.ninebot.ninebot.device.motor.network.MotorApiService");
+            subscribe(api.getMethod("getEngineStatus",int.class,String.class).invoke(service,type,number),true,id,queryLog.engine);
+        }catch(Exception e){if(active&&id==generation){queryLog.engine.result("setup_failed",e);fail(true,"请求失败 / 旧值");done();}}
     }
     private void subscribe(Object stream,boolean power,int id,StatusQueryLog.Endpoint diagnostic)throws Exception {
         diagnostic.phase("subscribe");
@@ -90,8 +107,8 @@ public final class VehicleStatusUi {
                 Object d=args[0];synchronized(disposables){if(active&&id==generation)disposables.add(d);else Class.forName("io.reactivex.disposables.Disposable").getMethod("dispose").invoke(d);}return null;
             }
             if(!active||id!=generation)return null;
-            if(n.equals("onNext")) {delivered[0]=true;accept(args[0],power,diagnostic);}
-            else if(n.equals("onError") || (n.equals("onComplete")&&!delivered[0])){diagnostic.result(n.equals("onError")?"request_failed":"empty",n.equals("onError")?(Throwable)args[0]:null);fail(power,"请求失败 / 旧值");done();}
+            if(n.equals("onNext")&&!delivered[0]) {delivered[0]=true;accept(args[0],power,diagnostic);}
+            else if(!delivered[0]&&(n.equals("onError") || n.equals("onComplete"))){delivered[0]=true;diagnostic.result(n.equals("onError")?"request_failed":"empty",n.equals("onError")?(Throwable)args[0]:null);fail(power,"请求失败 / 旧值");done();}
             return null;
         });
         observable.getMethod("subscribe",observer).invoke(stream,listener);
@@ -108,13 +125,13 @@ public final class VehicleStatusUi {
             }else{
                 Object data=call(response,"getData");if(data==null)throw new IllegalStateException();
                 long now=System.currentTimeMillis();
-                if(power){String acc=(String)call(data,"getAccStatus"),lock=(String)call(data,"getLockStatus"),report=(String)call(data,"getReportTime");diagnostic.engineFields(acc,lock,report);engine="最近上报\n电源："+StatusFormat.acc(acc)+"\n锁状态："+StatusFormat.lock(lock)+"\n车辆上报："+StatusFormat.report(report,now);engineState="已查询";}
+                if(power){String rawAcc=(String)call(data,"getAccStatus"),rawLock=(String)call(data,"getLockStatus"),report=(String)call(data,"getReportTime");diagnostic.engineFields(rawAcc,rawLock,report);acc=HomeStatus.binary(rawAcc);lock=HomeStatus.binary(rawLock);engineOk=true;engine="最近上报\n电源："+StatusFormat.acc(rawAcc)+"\n锁状态："+StatusFormat.lock(rawLock)+"\n车辆上报："+StatusFormat.report(report,now);engineState="已查询";}
                 diagnostic.result("success",null);
             }
         }catch(Exception e){diagnostic.result("parse_failed",e);fail(power,"解析失败 / 旧值");}
         done();
     }
     private void fail(boolean power,String text){if(power)engineState=text;else locState=text;}
-    private void done(){if(pending>0)pending--;if(pending==0){main.removeCallbacks(timeout);finishLog("complete");}render();}
-    private void render(){body.setText(location+"\n"+locState+"\n\n"+engine+"\n"+engineState+"\n\n查询："+StatusFormat.clock(queried)+"\n仅供参考；上电不等于行驶\n速度单位与状态码待实车核对\n\n"+logState);refresh.setEnabled(pending==0);refresh.setText(pending>0?"正在查询…":"刷新状态");}
+    private void done(){if(pending>0)pending--;if(pending==0){main.removeCallbacks(timeout);finishLog("complete");if(roundLocation!=null){homeState=HomeStatus.classify(roundLocation.speed,roundLocation.power,engineOk,acc,lock);homeSpeed=roundLocation.speed;homeNotice=engineOk?"":"部分状态未更新";}else homeNotice="更新失败 · 旧值";schedule();}render();}
+    private void render(){if(dashboard!=null)dashboard.show(homeState,homeSpeed,homeNotice);awake();body.setText(location+"\n"+locState+"\n\n"+engine+"\n"+engineState+"\n\n查询："+StatusFormat.clock(queried)+"\n仅供参考；上电不等于行驶\n速度单位与状态码待实车核对\n\n"+logState);refresh.setEnabled(pending==0);refresh.setText(pending>0?"正在查询…":"刷新状态");}
 }

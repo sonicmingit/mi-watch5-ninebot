@@ -8,6 +8,7 @@ from unified_manifest import add_unified
 root=Path(__file__).resolve().parents[2];src=Path(__file__).parent
 workspace=root.parent
 parser=argparse.ArgumentParser()
+parser.add_argument('--variant',choices=('test','public'),default='test')
 parser.add_argument('--output-dir',type=Path,default=workspace/'download/test/ninebot')
 parser.add_argument('--log-dir',type=Path,default=workspace/'download/logs/ninebot')
 args=parser.parse_args()
@@ -17,7 +18,7 @@ assert out.is_relative_to((workspace/'download/test/ninebot').resolve())
 assert logs.is_relative_to((workspace/'download/logs/ninebot').resolve())
 out.mkdir(parents=True,exist_ok=True);logs.mkdir(parents=True,exist_ok=True)
 stamp=datetime.datetime.now().strftime('%Y%m%d-%H%M%S')+'-'+uuid.uuid4().hex[:8]
-work=out/('status-crown-'+stamp);work.mkdir()
+work=out/('status-crown-'+args.variant+'-'+stamp);work.mkdir()
 out=work
 base=root/'inputs/ninebot-port5.apk'
 assert hashlib.sha256(base.read_bytes()).hexdigest()=='0d396a2c279f669ee876043a9debf987e2159be93207adb50fb1b10ddfb1f169'
@@ -25,7 +26,24 @@ bt=Path(os.environ['ANDROID_BUILD_TOOLS']);android=Path(os.environ['ANDROID_JAR'
 assert base.is_file()
 def run(*args):subprocess.run([str(x) for x in args],check=True)
 for n in ['classes','dex']:(work/n).mkdir(exist_ok=True)
-sources=[src/n for n in ('AccountUi.java','StatusFormat.java','CrownScroll.java','VehicleStatusUi.java','ReadOnlyStatusRaw.java','StatusQueryLog.java','VehicleSpeedActivity.java')]+[root/'src/bridge'/n for n in ('DirectLink.java','ProbeActivity.java','ProbeService.java')]
+source_names=('AccountUi.java','StatusFormat.java','CrownScroll.java','VehicleStatusUi.java','ReadOnlyStatusRaw.java','StatusQueryLog.java','VehicleSpeedActivity.java','HomeStatus.java','VehicleDashboard.java')
+sources=[src/n for n in source_names]+[root/'src/bridge'/n for n in ('DirectLink.java','ProbeActivity.java','ProbeService.java')]
+version_name='0.0.9-test90019-test-menu' if args.variant=='test' else '0.0.9-90019'
+if args.variant=='public':
+    # Compile public switches as constants so the test-only entry and log writer are removed.
+    generated=work/'sources';generated.mkdir()
+    replacements={
+        'AccountUi.java':('TEST_MENU_ENABLED = true','TEST_MENU_ENABLED = false'),
+        'StatusQueryLog.java':('LOGGING_ENABLED = true','LOGGING_ENABLED = false'),
+    }
+    for name in source_names:
+        text=(src/name).read_text(encoding='utf-8')
+        if name in replacements:
+            old,new=replacements[name]
+            assert text.count(old)==1
+            text=text.replace(old,new)
+        target=generated/name;target.write_text(text,encoding='utf-8');
+    sources=[generated/n for n in source_names]+[root/'src/bridge'/n for n in ('DirectLink.java','ProbeActivity.java','ProbeService.java')]
 run(j/'javac.exe','-encoding','UTF-8','-source','8','-target','8','-cp',android,'-d',work/'classes',*sources)
 run(j/'jar.exe','cf',work/'classes.jar','-C',work/'classes','.')
 run(j/'java.exe','-cp',bt/'lib/d8.jar','com.android.tools.r8.D8','--lib',android,'--min-api','26','--output',work/'dex',work/'classes.jar')
@@ -34,13 +52,13 @@ def version(b):
     while p<len(b):
         typ,hs,n=struct.unpack_from('<HHI',b,p)
         if typ==1:
-            pool=Pool(b[p:p+n]);pool.strings=['0.0.9-test90015-status-crown' if x=='0.0.9-port5' else x for x in pool.strings]
+            pool=Pool(b[p:p+n]);pool.strings=[version_name if x=='0.0.9-port5' else x for x in pool.strings]
             c=pool.encode();b[p:p+n]=c;n=len(c);struct.pack_into('<I',b,4,len(b))
         if typ==0x102:
             ast,asz,an=struct.unpack_from('<HHH',b,p+24)
             for i in range(an):
                 a=p+16+ast+i*asz
-                if b[a+15]==16 and struct.unpack_from('<I',b,a+16)[0]==90004:struct.pack_into('<I',b,a+16,90015)
+                if b[a+15]==16 and struct.unpack_from('<I',b,a+16)[0]==90004:struct.pack_into('<I',b,a+16,90019)
         p+=n
     return b
 def add_speed_activity(data):
@@ -67,18 +85,20 @@ def patch_dex(raw):
     struct.pack_into('<I',b,inner+8,zlib.adler32(b[inner+12:inner+size])&0xffffffff)
     b[12:32]=hashlib.sha1(b[32:]).digest();struct.pack_into('<I',b,8,zlib.adler32(b[12:])&0xffffffff)
     return b
-with zipfile.ZipFile(base) as z,zipfile.ZipFile(out/'port6-unified-unsigned.apk','w') as dst:
+unsigned_name='port6-unified-unsigned.apk' if args.variant=='test' else 'port6-public-unsigned.apk'
+aligned_name='port6-unified-aligned.apk' if args.variant=='test' else 'port6-public-aligned.apk'
+with zipfile.ZipFile(base) as z,zipfile.ZipFile(out/unsigned_name,'w') as dst:
     for info in z.infolist():
         if info.filename.startswith('META-INF/'):continue
         b=z.read(info.filename)
-        if info.filename=='AndroidManifest.xml':b=add_speed_activity(add_unified(version(b)))
+        if info.filename=='AndroidManifest.xml':b=add_unified(version(b));b=add_speed_activity(b) if args.variant=='test' else b
         if info.filename=='classes.dex':b=patch_dex(b)
         if info.filename=='classes2.dex':b=(work/'dex/classes.dex').read_bytes()
         dst.writestr(info,b)
-run(bt/'zipalign.exe','-f','-p','4',out/'port6-unified-unsigned.apk',out/'port6-unified-aligned.apk')
-apk=out/'port6-unified-aligned.apk'
+run(bt/'zipalign.exe','-f','-p','4',out/unsigned_name,out/aligned_name)
+apk=out/aligned_name
 run(bt/'zipalign.exe','-c','-p','4',apk)
-record={'version':'0.0.9-test90015-status-crown','versionCode':90015,'unsignedAlignedApk':str(apk),'sha256':hashlib.sha256(apk.read_bytes()).hexdigest(),'signed':False,'releaseUntouched':True}
+record={'variant':args.variant,'version':version_name,'versionCode':90019,'unsignedAlignedApk':str(apk),'sha256':hashlib.sha256(apk.read_bytes()).hexdigest(),'signed':False,'releaseUntouched':True}
 log=logs/(stamp+'-status-crown-build.json')
 with log.open('x',encoding='utf8') as f:json.dump(record,f,indent=2)
 print(json.dumps(record))

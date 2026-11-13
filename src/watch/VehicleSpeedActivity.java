@@ -45,7 +45,7 @@ public final class VehicleSpeedActivity extends Activity {
         userPaused=saved!=null&&saved.getBoolean("userPaused",false);
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(Color.BLACK);
         LinearLayout box=new LinearLayout(this);box.setOrientation(1);box.setGravity(Gravity.CENTER_HORIZONTAL);box.setPadding(AccountUi.dp(this,32),AccountUi.dp(this,26),AccountUi.dp(this,32),AccountUi.dp(this,36));
-        TextView title=text("云端速度 · 测试",14);box.addView(title,new LinearLayout.LayoutParams(-1,-2));
+        TextView title=text("速度 · 测试",14);box.addView(title,new LinearLayout.LayoutParams(-1,-2));
         value=text("--",44);value.setTag("ninebot.speed.value");value.setTextColor(0xff83ddff);value.setAutoSizeTextTypeUniformWithConfiguration(20,44,1,android.util.TypedValue.COMPLEX_UNIT_SP);box.addView(value,new LinearLayout.LayoutParams(-1,AccountUi.dp(this,54)));
         box.addView(text("原始数值 · 单位待核对",11),new LinearLayout.LayoutParams(-1,-2));
         state=text("",11);state.setTag("ninebot.speed.state");state.setPadding(0,AccountUi.dp(this,6),0,AccountUi.dp(this,6));box.addView(state,new LinearLayout.LayoutParams(-1,-2));
@@ -83,7 +83,7 @@ public final class VehicleSpeedActivity extends Activity {
             try {
                 ReadOnlyStatusRaw.Location result=current.read(currentSource,currentBean);
                 main.post(()->{if(!foreground||userPaused||id!=generation)return;inFlight=false;reader=null;worker=null;main.removeCallbacks(timeout);duration=SystemClock.elapsedRealtime()-began;
-                    if(result.speed!=null){lastSpeed=result.speed;lastSuccess=System.currentTimeMillis();status="查询成功 · 云端读数";}else status=lastSpeed==null?"速度未知（字段或格式）":"速度未知 · 旧值";
+                    if(result.speed!=null){lastSpeed=result.speed;lastSuccess=System.currentTimeMillis();status="查询成功";}else status=lastSpeed==null?"速度未知（字段或格式）":"速度未知 · 旧值";
                     finishLog("complete");render();schedule();});
             }catch(Exception ignored){main.post(()->{if(!foreground||userPaused||id!=generation)return;inFlight=false;reader=null;worker=null;main.removeCallbacks(timeout);duration=SystemClock.elapsedRealtime()-began;status=lastSpeed==null?"请求失败，尚无读数":"请求失败 · 旧值";finishLog("complete");render();schedule();});}
         },"ninebot-speed-observer");worker.start();
